@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<head>
+	<script src="https://cdn.jsdelivr.net/npm/@svgdotjs/svg.js@3.0/dist/svg.min.js"></script>
+	<style>
+		polygon {
+			pointer-events: visiblePainted;
+			fill: hsla(60, 12%, 95%, 0);
+			stroke: hsl(0, 0%, 70%);
+			stroke-width: 2px;
+			cursor: pointer;
+		}
+
+		.selected {
+			fill: hsla(186, 89%, 26%, 0.494);
+		}
+
+		.neighbor {
+			fill: hsla(154, 88%, 50%, 0.324);
+		}
+	</style>
+</head>
+<body>
+	<div id="map" style="max-width: 50%; margin: 0 auto"></div>
+	<script>
+		var draw = SVG().addTo("#map").attr({
+			viewBox:
+				"-799.4228634059948 -799.4228634059948 1598.8457268119896 1598.8457268119896",
+		});
+
+		function Hex(q, r, s, color) {
+			if (Math.round(q + r + s) !== 0) throw "q + r + s must be 0";
+			return { q: q, r: r, s: s };
+		}
+
+		const rows = 4;
+		const hexes = [];
+
+		for (q = -rows; q <= rows; q++) {
+			const r1 = Math.max(-rows, -q - rows);
+			const r2 = Math.min(rows, -q + rows);
+			for (r = r1; r <= r2; r++) {
+				hexes.push(new Hex(q, r, -q - r));
+			}
+		}
+
+		class Orientation {
+			constructor(f0, f1, f2, f3, b0, b1, b2, b3, start_angle) {
+				this.f0 = f0;
+				this.f1 = f1;
+				this.f2 = f2;
+				this.f3 = f3;
+				this.b0 = b0;
+				this.b1 = b1;
+				this.b2 = b2;
+				this.b3 = b3;
+				this.start_angle = start_angle;
+			}
+		}
+
+		class Point {
+			constructor(x, y) {
+				return { x, y };
+			}
+		}
+
+		class Layout {
+			constructor(orientation, size, origin) {
+				this.orientation = orientation;
+				this.size = size;
+				this.origin = origin;
+			}
+			hexToPixel(h) {
+				var M = this.orientation;
+				var size = this.size;
+				var origin = this.origin;
+				var x = (M.f0 * h.q + M.f1 * h.r) * size.x;
+				var y = (M.f2 * h.q + M.f3 * h.r) * size.y;
+				return new Point(x + origin.x, y + origin.y);
+			}
+			pixelToHex(p) {
+				var M = this.orientation;
+				var size = this.size;
+				var origin = this.origin;
+				var pt = new Point(
+					(p.x - origin.x) / size.x,
+					(p.y - origin.y) / size.y
+				);
+				var q = M.b0 * pt.x + M.b1 * pt.y;
+				var r = M.b2 * pt.x + M.b3 * pt.y;
+				return new Hex(q, r, -q - r);
+			}
+			hexCornerOffset(corner) {
+				var M = this.orientation;
+				var size = this.size;
+				var angle = (2.0 * Math.PI * (M.start_angle - corner)) / 6.0;
+				return new Point(size.x * Math.cos(angle), size.y * Math.sin(angle));
+			}
+			polygonCorners(h) {
+				var corners = [];
+				var center = this.hexToPixel(h);
+				for (var i = 0; i < 6; i++) {
+					var offset = this.hexCornerOffset(i);
+					corners.push(new Point(center.x + offset.x, center.y + offset.y));
+				}
+				return corners;
+			}
+		}
+
+		Layout.pointy = new Orientation(
+			Math.sqrt(3.0),
+			Math.sqrt(3.0) / 2.0,
+			0.0,
+			3.0 / 2.0,
+			Math.sqrt(3.0) / 3.0,
+			-1.0 / 3.0,
+			0.0,
+			2.0 / 3.0,
+			0.5
+		);
+		Layout.flat = new Orientation(
+			3.0 / 2.0,
+			0.0,
+			Math.sqrt(3.0) / 2.0,
+			Math.sqrt(3.0),
+			2.0 / 3.0,
+			0.0,
+			-1.0 / 3.0,
+			Math.sqrt(3.0) / 3.0,
+			0.0
+		);
+
+		const l = new Layout(Layout.flat, new Point(100, 100), new Point(0, 0));
+
+		function hexCenter(hex) {
+			let p = l.hexToPixel(hex);
+			return {
+				x: p.x,
+				y: p.y,
+				transform: `translate(${p.x.toFixed(0)},${p.y.toFixed(0)})`,
+			};
+		}
+
+		hexes.forEach((h) => {
+			draw
+				.polygon("100,0 50,-87 -50,-87 -100,-0 -50,87 50,87")
+				.attr({
+					fill: h.color,
+					transform: hexCenter(h).transform,
+					class: "click",
+					id: "q-" + h.q + "r-" + h.r + "s-" + h.s,
+				})
+				.data({
+					q: h.q,
+					r: h.r,
+					s: h.s,
+				});
+		});
+		const neighbors = [
+			[+1, -1, 0],
+			[+1, 0, -1],
+			[0, +1, -1],
+			[-1, +1, 0],
+			[-1, 0, +1],
+			[0, -1, +1],
+		];
+		SVG.on(document, "DOMContentLoaded", function () {
+			const mouseover = function () {
+				this.addClass("hover");
+				neighbors.forEach((n) => {
+					const id = `#q-${this.node.dataset.q * 1 + n[0] * 1}r-${
+						this.node.dataset.r * 1 + n[1] * 1
+					}s-${this.node.dataset.s * 1 + n[2] * 1}`;
+
+					SVG.find(id).addClass("neighbor");
+				});
+			};
+
+			const mouseleave = function () {
+				this.removeClass("hover");
+				neighbors.forEach((n) => {
+					const id = `#q-${this.node.dataset.q * 1 + n[0] * 1}r-${
+						this.node.dataset.r * 1 + n[1] * 1
+					}s-${this.node.dataset.s * 1 + n[2] * 1}`;
+
+					SVG.find(id).removeClass("neighbor");
+				});
+			};
+
+			const click = function () {
+				this.toggleClass("selected");
+			};
+
+			SVG.find("polygon.click").each((p) => {
+				p.on("mouseover", mouseover);
+				p.on("mouseleave", mouseleave);
+				p.on("click", click);
+			});
+		});
+
+		class Map {
+			constructor() {}
+		}
+	</script>
+</body>
